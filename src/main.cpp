@@ -201,16 +201,15 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
-                     uWS::OpCode opCode) {
+    double ref_vel = 5; // reference velocity in mph, max starting speed with no jerk
+    int lane = 1;
+
+h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     //auto sdata = string(data).substr(0, length);
     //cout << sdata << endl;
-      
-      int lane = 1;
-      double ref_vel = 49.5; // reference velocity in mph
 
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
 
@@ -254,7 +253,7 @@ int main() {
             for(int i=0; i<sensor_fusion.size(); i++) // go through each car in sensor fusion
             {
                 float d = sensor_fusion[i][6]; // d value of the ith car
-                if(d < (2+4*lane+2) && d> (2+4*lane-2)) // check if the car is in our 4m lane
+                if(d < (2+4*lane+2) && d > (2+4*lane-2)) // check if the car is in our 4m lane
                 {
                     double vx = sensor_fusion[i][3]; // ith car x value
                     double vy = sensor_fusion[i][4]; // ith car y value
@@ -262,12 +261,19 @@ int main() {
                     double check_car_s = sensor_fusion[i][5]; // ith car s value
                     
                     // calculate where the ith car was and will be based on its speed to compare it to our car
-                    check_car_s += ((double)prev_path_size*0.2*check_speed);
+                    check_car_s += ((double)prev_path_size*0.02*check_speed);
                     // check if the car is in front of us and close enough for us to take action
-                    if((check_car_s>car_s)&&((check_car_s-car_s>30))){
-                        ref_vel=35;
+                    if((check_car_s>car_s)&&((check_car_s-car_s)<30)){
+                        too_close = true;
                     }
                 }
+            }
+            
+            if(too_close){// if the car in front of us is too close we decrement our speed
+                ref_vel -= .124;
+            }
+            else if(ref_vel<49.5){// if the car in front is far enough we increment our speed ot the max
+                ref_vel += .224;
             }
             
             // create a list of evenly seperated points at 30m
