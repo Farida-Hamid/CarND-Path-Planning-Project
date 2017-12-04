@@ -239,11 +239,36 @@ int main() {
           	double end_path_s = j[1]["end_path_s"];
           	double end_path_d = j[1]["end_path_d"];
 
-          	// Sensor Fusion Data, a list of all other cars on the same side of the road.
-          	auto sensor_fusion = j[1]["sensor_fusion"];
+          	// Sensor Fusion Data, a list of all other cars on the same side of the road. recording their position x,y,s,d and speed
+          	auto sensor_fusion = j[1]["sensor_fusion"]; // a vector of vector of double
             
             int prev_path_size = previous_path_x.size();
-            ///////////
+            
+            // detecting other cars in our lane
+            if(prev_path_size>0){ // if there are points use the last s point
+                car_s = end_path_s;
+            }
+            
+            bool too_close = false;
+            
+            for(int i=0; i<sensor_fusion.size(); i++) // go through each car in sensor fusion
+            {
+                float d = sensor_fusion[i][6]; // d value of the ith car
+                if(d < (2+4*lane+2) && d> (2+4*lane-2)) // check if the car is in our 4m lane
+                {
+                    double vx = sensor_fusion[i][3]; // ith car x value
+                    double vy = sensor_fusion[i][4]; // ith car y value
+                    double check_speed = sqrt(vx*vx + vy*vy); // calculate velocity vector magnitude
+                    double check_car_s = sensor_fusion[i][5]; // ith car s value
+                    
+                    // calculate where the ith car was and will be based on its speed to compare it to our car
+                    check_car_s += ((double)prev_path_size*0.2*check_speed);
+                    // check if the car is in front of us and close enough for us to take action
+                    if((check_car_s>car_s)&&((check_car_s-car_s>30))){
+                        ref_vel=35;
+                    }
+                }
+            }
             
             // create a list of evenly seperated points at 30m
             vector<double> ptsx;
