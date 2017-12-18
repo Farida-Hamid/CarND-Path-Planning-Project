@@ -248,34 +248,97 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
                 car_s = end_path_s;
             }
             
+            int old_lane = lane;
             bool too_close = false;
-            
+            double cost_R = 0;
+            double cost_L = 0;
+            double car_left_front, car_right_front = 999.9;
+            double car_left_behind, car_right_behind = 999.9;
+
             for(int i=0; i<sensor_fusion.size(); i++) // go through each car in sensor fusion
             {
                 float d = sensor_fusion[i][6]; // d value of the ith car
+                double vx = sensor_fusion[i][3]; // ith car x value
+                double vy = sensor_fusion[i][4]; // ith car y value
+                double check_speed = sqrt(vx*vx + vy*vy); // calculate velocity vector magnitude
+                double check_car_s = sensor_fusion[i][5]; // ith car s value
+                
+                // calculate where the ith car is based on its speed and position to compare it to our car
+                check_car_s += ((double)prev_path_size*0.02*check_speed);
+                
                 if(d < (2+4*lane+2) && d > (2+4*lane-2)) // check if the car is in our 4m lane
                 {
-                    double vx = sensor_fusion[i][3]; // ith car x value
-                    double vy = sensor_fusion[i][4]; // ith car y value
-                    double check_speed = sqrt(vx*vx + vy*vy); // calculate velocity vector magnitude
-                    double check_car_s = sensor_fusion[i][5]; // ith car s value
-                    
-                    // calculate where the ith car was and will be based on its speed to compare it to our car
-                    check_car_s += ((double)prev_path_size*0.02*check_speed);
                     // check if the car is in front of us and close enough for us to take action
                     if((check_car_s>car_s)&&((check_car_s-car_s)<30)){
                         too_close = true;
                     }
                 }
+                else
+                { //find the closest car in front and the closest car behind for every lane we can shift to
+                    double distance_to_car;
+                    
+                    if((check_car_s>car_s)&&((check_car_s-car_s)<30)){
+                        // if the car is in front and close enough
+
+                        distance_to_car = check_car_s - car_s;
+                        if (distance_to_car<car_right_front && lane<2){ // can go right
+                            //cost_R += distance_to_car;
+                            car_right_front = distance_to_car;
+                        }
+                        if(distance_to_car<car_left_front && lane>0){ // can go left
+                            //cost_L += distance_to_car;
+                            car_left_front = distance_to_car;
+                        }
+                    }
+                    else if((check_car_s<=car_s)&&((car_s-check_car_s)<10)){
+                        // if the car is behind and close enough
+                        
+                        distance_to_car = car_s - check_car_s;
+                        if (distance_to_car<car_right_behind && lane<2){ // can go right
+                            //cost_R += distance_to_car/1.5;
+                            car_right_behind = distance_to_car;
+                        }
+                        if(distance_to_car<car_left_behind && lane>0){ // can go left
+                            //cost_L += distance_to_car/1.5;
+                            car_left_behind = distance_to_car;
+                        }
+                    }
+                }
+            }
+            if (lane==0){
+                cost_L =0;
+            }
+            else{
+                cost_L = (car_left_behind/1.3) + car_left_front;
             }
             
+            if (lane ==2){
+                cost_R = 0;
+            }
+            else{
+                cost_R = (car_right_behind/1.3) + car_right_front;
+            }
+            //cout<<endl<<"our lane="<<lane<<"cost_R="<<cost_R<<"cost_L="<<cost_L;
+
             if(too_close){// if the car in front of us is too close we decrement our speed
-                ref_vel -= .124;
+                
+                //if (cost_R+cost_L > 0){
+                //if (car_right_behind == 999.9 && car_right_front ==999.9)
+                    if (lane>0 && cost_L>=cost_R)
+                        lane -= 1;
+                    else if(lane<2 && cost_R>=cost_L)
+                        lane += 1;
+                  //  }
+                //else
+                if (old_lane==lane){
+                    ref_vel -= .08;
+                    old_lane = lane;
+                }
             }
             else if(ref_vel<49.5){// if the car in front is far enough we increment our speed ot the max
                 ref_vel += .224;
             }
-            
+
             // create a list of evenly seperated points at 30m
             vector<double> ptsx;
             vector<double> ptsy;
@@ -383,7 +446,7 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
                 
                 next_x_vals.push_back(x_point);
                 next_y_vals.push_back(y_point);
-            }//
+            }
             
             json msgJson;
           	msgJson["next_x"] = next_x_vals;
