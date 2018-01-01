@@ -248,93 +248,103 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
                 car_s = end_path_s;
             }
             
-            int old_lane = lane;
-            bool too_close = false;
+            bool too_close, slow_down = false;
             double cost_R = 0;
             double cost_L = 0;
-            double car_left_front, car_right_front = 999.9;
-            double car_left_behind, car_right_behind = 999.9;
+            double car_left_front, car_right_front = 99999.9;
+            double car_left_behind, car_right_behind = 99999.9;
 
             for(int i=0; i<sensor_fusion.size(); i++) // go through each car in sensor fusion
             {
                 float d = sensor_fusion[i][6]; // d value of the ith car
-                double vx = sensor_fusion[i][3]; // ith car x value
-                double vy = sensor_fusion[i][4]; // ith car y value
-                double check_speed = sqrt(vx*vx + vy*vy); // calculate velocity vector magnitude
-                double check_car_s = sensor_fusion[i][5]; // ith car s value
-                
-                // calculate where the ith car is based on its speed and position to compare it to our car
-                check_car_s += ((double)prev_path_size*0.02*check_speed);
-                
+
                 if(d < (2+4*lane+2) && d > (2+4*lane-2)) // check if the car is in our 4m lane
                 {
+                    double vx = sensor_fusion[i][3]; // ith car x value
+                    double vy = sensor_fusion[i][4]; // ith car y value
+                    double check_speed = sqrt(vx*vx + vy*vy); // calculate velocity vector magnitude
+                    double check_car_s = sensor_fusion[i][5]; // ith car s value
+                    
+                    // calculate where the ith car is based on its speed and position to compare it to our car
+                    check_car_s += ((double)prev_path_size*0.02*check_speed);
+                    
                     // check if the car is in front of us and close enough for us to take action
-                    if((check_car_s>car_s)&&((check_car_s-car_s)<30)){
+                    if((check_car_s>car_s)&&((check_car_s-car_s)<40)){
                         too_close = true;
+                        if ((check_car_s-car_s)<10)
+                            slow_down = true;
                     }
                 }
                 else
                 { //find the closest car in front and the closest car behind for every lane we can shift to
-                    double distance_to_car;
                     
-                    if((check_car_s>car_s)&&((check_car_s-car_s)<30)){
-                        // if the car is in front and close enough
+                    double vx = sensor_fusion[i][3]; // ith car x value
+                    double vy = sensor_fusion[i][4]; // ith car y value
+                    double check_speed = sqrt(vx*vx + vy*vy); // calculate velocity vector magnitude
+                    double check_car_s = sensor_fusion[i][5]; // ith car's s value
+                    
+                    // calculate where the ith car is based on its speed and position to compare it to our car
+                    check_car_s += ((double)prev_path_size*0.02*check_speed);
+                    
+                    double distance_to_car = check_car_s - car_s;
 
-                        distance_to_car = check_car_s - car_s;
-                        if (distance_to_car<car_right_front && lane<2){ // can go right
-                            //cost_R += distance_to_car;
+                    if((check_car_s>car_s) && ((distance_to_car)<30)){
+                        // if the car is in front and close enough check if it's the closest
+
+                        double d_diff = d-end_path_d;
+                        if (lane<2 && d_diff<=7 && d_diff>=5 && distance_to_car<car_right_front){ // can go right
                             car_right_front = distance_to_car;
                         }
-                        if(distance_to_car<car_left_front && lane>0){ // can go left
-                            //cost_L += distance_to_car;
+                        else if(lane>0 && d_diff>=-7 && d_diff<=-5 && distance_to_car<car_left_front){ // can go left
                             car_left_front = distance_to_car;
                         }
                     }
-                    else if((check_car_s<=car_s)&&((car_s-check_car_s)<10)){
-                        // if the car is behind and close enough
+                    /*else if((check_car_s<car_s)&&((car_s-check_car_s)<5)){
+                        // if the car is behind check if it's the closest
                         
                         distance_to_car = car_s - check_car_s;
                         if (distance_to_car<car_right_behind && lane<2){ // can go right
                             //cost_R += distance_to_car/1.5;
                             car_right_behind = distance_to_car;
                         }
-                        if(distance_to_car<car_left_behind && lane>0){ // can go left
+                        else if(distance_to_car<car_left_behind && lane>0){ // can go left
                             //cost_L += distance_to_car/1.5;
                             car_left_behind = distance_to_car;
                         }
-                    }
+                    }*/
                 }
             }
-            if (lane==0){
+            
+            if (lane==0 || car_left_front<10){
                 cost_L =0;
             }
             else{
-                cost_L = (car_left_behind/1.3) + car_left_front;
+                cost_L = car_left_front;//(car_left_behind) + car_left_front;
             }
             
-            if (lane ==2){
+            if (lane==2 || car_right_front<10){
                 cost_R = 0;
             }
             else{
-                cost_R = (car_right_behind/1.3) + car_right_front;
+                cost_R = car_right_front;//(car_right_behind) + car_right_front;
             }
-            //cout<<endl<<"our lane="<<lane<<"cost_R="<<cost_R<<"cost_L="<<cost_L;
+            car_right_front = 99999.9;
+            car_left_front = 99999.9;
 
             if(too_close){// if the car in front of us is too close we decrement our speed
                 
-                //if (cost_R+cost_L > 0){
-                //if (car_right_behind == 999.9 && car_right_front ==999.9)
+                if (slow_down || (cost_L==0 && cost_R==0)){// slow down
+                    ref_vel -= .05;
+                    slow_down = false;
+                }
+                else{ // change lanes
                     if (lane>0 && cost_L>=cost_R)
                         lane -= 1;
                     else if(lane<2 && cost_R>=cost_L)
                         lane += 1;
-                  //  }
-                //else
-                if (old_lane==lane){
-                    ref_vel -= .08;
-                    old_lane = lane;
                 }
             }
+            
             else if(ref_vel<49.5){// if the car in front is far enough we increment our speed ot the max
                 ref_vel += .224;
             }
