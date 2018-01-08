@@ -178,7 +178,7 @@ int main() {
   // Waypoint map to read from
   string map_file_ = "../data/highway_map.csv";
   // The max s value before wrapping around the track back to 0
-  double max_s = 6945.554;
+  const double max_s = ceil(6945.554);
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -205,7 +205,7 @@ int main() {
     double ref_vel = 5; // reference velocity in mph, max starting speed with no jerk
     int lane = 1;
     
-h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,uWS::OpCode opCode) {
+h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane, &max_s](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -240,7 +240,7 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
           	double end_path_s = j[1]["end_path_s"];
           	double end_path_d = j[1]["end_path_d"];
             //cout<<"   d = "<<end_path_d;
-            cout<<"   car_s = "<<end_path_s;
+            //cout<<"   car_s = "<<end_path_s;
 
           	// Sensor Fusion Data, a list of all other cars on the same side of the road. recording their position x,y,s,d and speed
           	auto sensor_fusion = j[1]["sensor_fusion"]; // a vector of vector of double
@@ -255,9 +255,9 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
             bool too_close, slow_down = false;
             double cost_R = 0;
             double cost_L = 0;
-            double s_front_car = 6945.554 + 2;
-            double car_left_front = 6945.554 + 2;
-            double car_right_front = 6945.554 + 2;
+            double s_front_car = max_s;
+            double car_left_front = max_s;
+            double car_right_front = max_s;
             double front_car_speed = 0;
             //double car_left_front, car_right_front = max_s;
             //double car_left_behind, car_right_behind = max_s;
@@ -282,7 +282,7 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
                     if((check_car_s>car_s) && ((check_car_s-car_s)<30)){
                         too_close = true;
                         s_front_car = check_car_s;
-                        front_car_speed = check_speed;
+                        front_car_speed = check_speed*2.24; // convert car speed
                         
                         if ((check_car_s-car_s)<20)
                             slow_down = true;
@@ -330,24 +330,24 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
                     }*/
                 }
             }
+            double front = s_front_car-car_s;
 
-            cout<<"     s_front = "<<s_front_car<<"     left = "<<car_left_front<<"     right = "<<car_right_front;
-            //lane = 2;
+            cout<<"speed = "<<ref_vel<<"     front = "<<front<<"    f_speed = "<<front_car_speed<<"     left = "<<car_left_front<<"     right = "<<car_right_front;
             
-            if (lane==0 || car_left_front<10 || (car_left_front!=6947.554  && s_front_car!=6947.554  && abs(car_left_front - (s_front_car - car_s))>10)){
+            if (lane==0 || car_left_front<10 || (car_left_front!=max_s  && s_front_car!=max_s  && abs(car_left_front - (s_front_car - car_s))>10)){
                 cost_L =0;
-                if(car_left_front!=6947.554  && s_front_car!=6947.554  && abs(car_left_front - (s_front_car - car_s))>13){
-                    cout<<endl<<"the cR INFRONT re too close to eachother";
-                }}
+                //if(car_left_front!=6947.554  && s_front_car!=6947.554  && abs(car_left_front - (s_front_car - car_s))>13){
+                    //cout<<endl<<"the cR INFRONT re too close to eachother";
+                }//}
             else{
                 cost_L = car_left_front;//(car_left_behind) + car_left_front;
             }
             
-            if (lane==2 || car_right_front<10 || (car_right_front!=6947.554  && s_front_car!=6947.554  && abs(car_right_front - (s_front_car - car_s))>10)){
+            if (lane==2 || car_right_front<10 || (car_right_front!=max_s  && s_front_car!=max_s  && abs(car_right_front - (s_front_car - car_s))>10)){
                 cost_R = 0;
-                if(car_right_front!=6947.554  && s_front_car!=6947.554  && abs(car_right_front - (s_front_car - car_s))>13){
-                    cout<<endl<<"the cR INFRONT re too close to eachother";
-                }}
+                //if(car_right_front!=6947.554  && s_front_car!=6947.554  && abs(car_right_front - (s_front_car - car_s))>13){
+                    //cout<<endl<<"the cR INFRONT re too close to eachother";
+                }//}
             else{
                 cost_R = car_right_front;//(car_right_behind) + car_right_front;
             }
@@ -373,12 +373,12 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
             }
             too_close = false;
             slow_down = false;
-            s_front_car = 6945.554 + 2;
+            s_front_car = max_s;
             cost_R = 0;
             cost_L = 0;
-            car_left_front = 6945.554 + 2;
+            car_left_front = max_s;
             //car_left_behind = 999.9;
-            car_right_front = 6945.554 + 2;
+            car_right_front = max_s;
             //car_right_behind = 999.9;
             //cout<<"   v = "<<ref_vel;
 
