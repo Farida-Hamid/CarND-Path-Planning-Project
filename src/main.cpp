@@ -9,6 +9,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "spline.h"
+#include <stdlib.h>     /* abs */
 
 using namespace std;
 
@@ -203,13 +204,14 @@ int main() {
 
     double ref_vel = 5; // reference velocity in mph, max starting speed with no jerk
     int lane = 1;
-
+    
 h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     //auto sdata = string(data).substr(0, length);
     //cout << sdata << endl;
+    cout<<endl<<"lane = "<<lane;
 
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
 
@@ -237,12 +239,14 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
           	// Previous path's end s and d values 
           	double end_path_s = j[1]["end_path_s"];
           	double end_path_d = j[1]["end_path_d"];
+            //cout<<"   d = "<<end_path_d;
+            cout<<"   car_s = "<<end_path_s;
 
           	// Sensor Fusion Data, a list of all other cars on the same side of the road. recording their position x,y,s,d and speed
           	auto sensor_fusion = j[1]["sensor_fusion"]; // a vector of vector of double
             
             int prev_path_size = previous_path_x.size();
-            
+
             // detecting other cars in our lane
             if(prev_path_size>0){ // if there are points use the last s point
                 car_s = end_path_s;
@@ -251,14 +255,20 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
             bool too_close, slow_down = false;
             double cost_R = 0;
             double cost_L = 0;
-            double car_left_front, car_right_front = 99999.9;
-            double car_left_behind, car_right_behind = 99999.9;
+            double s_front_car = 6945.554 + 2;
+            double car_left_front = 6945.554 + 2;
+            double car_right_front = 6945.554 + 2;
+            double front_car_speed = 0;
+            //double car_left_front, car_right_front = max_s;
+            //double car_left_behind, car_right_behind = max_s;
 
             for(int i=0; i<sensor_fusion.size(); i++) // go through each car in sensor fusion
             {
                 float d = sensor_fusion[i][6]; // d value of the ith car
+                int check_lane = floor(d/4.0);
 
-                if(d < (2+4*lane+2) && d > (2+4*lane-2)) // check if the car is in our 4m lane
+                //if(d < (2+4*lane+2) && d > (2+4*lane-2)) // check if the car is in our 4m lane
+                if(check_lane == lane) // check if the car is in our 4m lane
                 {
                     double vx = sensor_fusion[i][3]; // ith car x value
                     double vy = sensor_fusion[i][4]; // ith car y value
@@ -269,9 +279,12 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
                     check_car_s += ((double)prev_path_size*0.02*check_speed);
                     
                     // check if the car is in front of us and close enough for us to take action
-                    if((check_car_s>car_s)&&((check_car_s-car_s)<40)){
+                    if((check_car_s>car_s) && ((check_car_s-car_s)<30)){
                         too_close = true;
-                        if ((check_car_s-car_s)<10)
+                        s_front_car = check_car_s;
+                        front_car_speed = check_speed;
+                        
+                        if ((check_car_s-car_s)<20)
                             slow_down = true;
                     }
                 }
@@ -288,14 +301,17 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
                     
                     double distance_to_car = check_car_s - car_s;
 
-                    if((check_car_s>car_s) && ((distance_to_car)<30)){
+                    if((distance_to_car>0) && (distance_to_car<50)){
+                    //if((distance_to_car>15) && ((distance_to_car)<50)){
                         // if the car is in front and close enough check if it's the closest
 
-                        double d_diff = d-end_path_d;
-                        if (lane<2 && d_diff<=7 && d_diff>=5 && distance_to_car<car_right_front){ // can go right
+                        //double d_diff = d-end_path_d;
+                        //if (lane<2 && d_diff<=7 && d_diff>=5 && distance_to_car<car_right_front){ // can go right
+                        if (lane<2 && check_lane>lane && distance_to_car<car_right_front){ // can go right
                             car_right_front = distance_to_car;
                         }
-                        else if(lane>0 && d_diff>=-7 && d_diff<=-5 && distance_to_car<car_left_front){ // can go left
+                        //else if(lane>0 && d_diff>=-7 && d_diff<=-5 && distance_to_car<car_left_front){ // can go left
+                        else if(lane>0 && check_lane<lane && distance_to_car<car_left_front){ // can go left
                             car_left_front = distance_to_car;
                         }
                     }
@@ -314,40 +330,57 @@ h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_wa
                     }*/
                 }
             }
+
+            cout<<"     s_front = "<<s_front_car<<"     left = "<<car_left_front<<"     right = "<<car_right_front;
+            //lane = 2;
             
-            if (lane==0 || car_left_front<10){
+            if (lane==0 || car_left_front<10 || (car_left_front!=6947.554  && s_front_car!=6947.554  && abs(car_left_front - (s_front_car - car_s))>10)){
                 cost_L =0;
-            }
+                if(car_left_front!=6947.554  && s_front_car!=6947.554  && abs(car_left_front - (s_front_car - car_s))>13){
+                    cout<<endl<<"the cR INFRONT re too close to eachother";
+                }}
             else{
                 cost_L = car_left_front;//(car_left_behind) + car_left_front;
             }
             
-            if (lane==2 || car_right_front<10){
+            if (lane==2 || car_right_front<10 || (car_right_front!=6947.554  && s_front_car!=6947.554  && abs(car_right_front - (s_front_car - car_s))>10)){
                 cost_R = 0;
-            }
+                if(car_right_front!=6947.554  && s_front_car!=6947.554  && abs(car_right_front - (s_front_car - car_s))>13){
+                    cout<<endl<<"the cR INFRONT re too close to eachother";
+                }}
             else{
                 cost_R = car_right_front;//(car_right_behind) + car_right_front;
             }
-            car_right_front = 99999.9;
-            car_left_front = 99999.9;
+            //car_right_front = 99999.9;
+            //car_left_front = 99999.9;
 
             if(too_close){// if the car in front of us is too close we decrement our speed
                 
                 if (slow_down || (cost_L==0 && cost_R==0)){// slow down
-                    ref_vel -= .05;
-                    slow_down = false;
+                    if(ref_vel>front_car_speed){
+                        ref_vel -= 0.12;
+                    }
                 }
                 else{ // change lanes
                     if (lane>0 && cost_L>=cost_R)
-                        lane -= 1;
+                        lane --;
                     else if(lane<2 && cost_R>=cost_L)
-                        lane += 1;
+                        lane ++;
                 }
             }
-            
-            else if(ref_vel<49.5){// if the car in front is far enough we increment our speed ot the max
+            else if(ref_vel<49.5 && !slow_down){// if the car in front is far enough we increment our speed ot the max
                 ref_vel += .224;
             }
+            too_close = false;
+            slow_down = false;
+            s_front_car = 6945.554 + 2;
+            cost_R = 0;
+            cost_L = 0;
+            car_left_front = 6945.554 + 2;
+            //car_left_behind = 999.9;
+            car_right_front = 6945.554 + 2;
+            //car_right_behind = 999.9;
+            //cout<<"   v = "<<ref_vel;
 
             // create a list of evenly seperated points at 30m
             vector<double> ptsx;
